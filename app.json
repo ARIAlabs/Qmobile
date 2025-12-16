@@ -1,7 +1,7 @@
 {
   "expo": {
     "web": {
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/images/pwa-icon.png",
       "bundler": "metro",
       "display": "standalone",
       "startUrl": "/?utm_source=web_app_manifest",
@@ -10,7 +10,7 @@
       "themeColor": "#000000",
       "backgroundColor": "#000000",
       "splash": {
-        "image": "./assets/splash.png",
+        "image": "./assets/images/pwa-icon.png",
         "resizeMode": "contain",
         "backgroundColor": "#000000"
       },
@@ -69,6 +69,7 @@
       ]
     },
     "web": {
+      "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },

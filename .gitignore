@@ -52,3 +52,6 @@ app-example
 # Keep the example file
 !.env.example
 .vercel
+
+# Local Netlify folder
+.netlify
