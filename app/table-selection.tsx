@@ -72,11 +72,7 @@ export default function TableSelectionScreen() {
     <View style={[styles.container, { backgroundColor: QuiloxColors.black }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <IconSymbol name="arrow.left" size={24} color={QuiloxColors.gold} />
-        </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: '#fff' }]}>Select Your Table Area</Text>
-        <View style={{ width: 24 }} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>

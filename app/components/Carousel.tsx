@@ -1,5 +1,5 @@
 import { QuiloxColors } from '@/constants/theme';
-import { Carousel as CarouselType, fetchCarousel, subscribeToCarousel } from '@/lib/supabase';
+import { CarouselItem, fetchCarousel, subscribeToCarousel } from '@/lib/supabase';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, Image, StyleSheet, Text, View } from 'react-native';
 import Carousel from 'react-native-reanimated-carousel';
@@ -7,7 +7,7 @@ import Carousel from 'react-native-reanimated-carousel';
 const { width } = Dimensions.get('window');
 
 export default function CarouselComponent() {
-  const [carouselItems, setCarouselItems] = useState<CarouselType[]>([]);
+  const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -22,15 +22,7 @@ export default function CarouselComponent() {
     try {
       setLoading(true);
       
-      // Add 5 second timeout for carousel loading
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Carousel loading timeout')), 5000);
-      });
-      
-      const response = await Promise.race([
-        fetchCarousel(),
-        timeoutPromise
-      ]);
+      const response = await fetchCarousel();
       
       // Handle new ApiResponse format
       if (response && typeof response === 'object' && 'data' in response) {
@@ -39,7 +31,8 @@ export default function CarouselComponent() {
         setCarouselItems([]);
       }
     } catch (error) {
-      console.error('Error loading carousel:', error);
+      // Silently handle carousel errors - not critical to app functionality
+      console.log('Carousel not available, continuing without it');
       setCarouselItems([]); // Set empty array on error
     } finally {
       setLoading(false);

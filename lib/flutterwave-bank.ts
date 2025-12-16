@@ -1,19 +1,19 @@
 /**
- * Globus Bank API Client
- * Handles virtual account creation, balance management, and transactions
+ * Flutterwave API Client
+ * Handles Privé wallet operations including virtual accounts, balance management, and transactions
  * 
- * API Documentation: https://sandbox.globusbank.com/docs
- * Base URL: https://sandbox.globusbank.com/api/v1
+ * API Documentation: https://developer.flutterwave.com/docs
+ * Base URL: https://api.flutterwave.com/v3
  */
 
-import { logger } from '@/utils/logger';
 import { config } from '@/config/environment';
 
 // ==================== TYPES & INTERFACES ====================
 
-export interface GlobusBankConfig {
-  apiKey: string;
+export interface FlutterwaveConfig {
+  publicKey: string;
   secretKey: string;
+  encryptionKey: string;
   baseUrl: string;
   environment: 'sandbox' | 'production';
 }
@@ -21,7 +21,7 @@ export interface GlobusBankConfig {
 export interface VirtualAccount {
   accountNumber: string;
   accountName: string;
-  bank Name: string;
+  bankName: string;
   bankCode: string;
   userId: string;
   balance: number;
@@ -110,26 +110,32 @@ export interface TransferResponse {
 
 // ==================== API CLIENT CLASS ====================
 
-class GlobusBankClient {
-  private config: GlobusBankConfig;
+class FlutterwaveClient {
+  private config: FlutterwaveConfig;
   private timeout = 30000; // 30 seconds
 
   constructor() {
     // Load from environment variables
-    const apiKey = process.env.EXPO_PUBLIC_GLOBUS_API_KEY || '';
-    const secretKey = process.env.EXPO_PUBLIC_GLOBUS_SECRET_KEY || '';
+    const publicKey = process.env.EXPO_PUBLIC_FLUTTERWAVE_PUBLIC_KEY || '';
+    const secretKey = process.env.EXPO_PUBLIC_FLUTTERWAVE_SECRET_KEY || '';
+    const encryptionKey = process.env.EXPO_PUBLIC_FLUTTERWAVE_ENCRYPTION_KEY || '';
+    
+    // Debug logging
+    console.debug('🔑 Flutterwave Config Loading:');
+    console.debug('  Public Key:', publicKey ? `${publicKey.substring(0, 20)}...` : 'MISSING');
+    console.debug('  Secret Key:', secretKey ? `${secretKey.substring(0, 20)}...` : 'MISSING');
+    console.debug('  Encryption Key:', encryptionKey ? `${encryptionKey.substring(0, 20)}...` : 'MISSING');
     
     this.config = {
-      apiKey,
+      publicKey,
       secretKey,
-      baseUrl: config.isProduction
-        ? 'https://api.globusbank.com/v1'
-        : 'https://sandbox.globusbank.com/api/v1',
+      encryptionKey,
+      baseUrl: 'https://api.flutterwave.com/v3',
       environment: config.isProduction ? 'production' : 'sandbox',
     };
 
-    if (!apiKey || !secretKey) {
-      logger.warn('Globus Bank credentials not configured. Some features may be unavailable.');
+    if (!secretKey) {
+      console.warn('Flutterwave credentials not configured. Wallet features may be unavailable.');
     }
   }
 
@@ -139,9 +145,7 @@ class GlobusBankClient {
   private getHeaders(): HeadersInit {
     return {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.config.apiKey}`,
-      'X-Secret-Key': this.config.secretKey,
-      'X-Client-Id': 'quilox-mobile-app',
+      'Authorization': `Bearer ${this.config.secretKey}`,
     };
   }
 
@@ -155,7 +159,7 @@ class GlobusBankClient {
     const url = `${this.config.baseUrl}${endpoint}`;
 
     try {
-      logger.debug(`Globus API Request: ${options.method || 'GET'} ${url}`);
+      console.debug(`Flutterwave API Request: ${options.method || 'GET'} ${url}`);
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.timeout);
@@ -173,18 +177,18 @@ class GlobusBankClient {
 
       const data = await response.json();
 
-      if (!response.ok) {
-        logger.error('Globus API Error:', data);
-        throw new Error(data.message || data.error || 'API request failed');
+      if (!response.ok || data.status === 'failed') {
+        console.error('Flutterwave API Error:', data);
+        throw new Error(data.message || data.error?.message || 'API request failed');
       }
 
-      logger.debug('Globus API Response:', data);
+      console.debug('Flutterwave API Response:', data);
       return data;
     } catch (error: any) {
       if (error.name === 'AbortError') {
         throw new Error('Request timeout - please try again');
       }
-      logger.error('Globus API Request Failed:', error);
+      console.error('Flutterwave API Request Failed:', error);
       throw error;
     }
   }
@@ -196,36 +200,99 @@ class GlobusBankClient {
     request: CreateAccountRequest
   ): Promise<CreateAccountResponse> {
     try {
-      logger.info('Creating virtual account for user:', request.userId);
+      console.info('Creating virtual account for user:', request.userId);
 
-      const response = await this.request<CreateAccountResponse>('/accounts/create', {
+      const response = await this.request<any>('/virtual-account-numbers', {
         method: 'POST',
         body: JSON.stringify({
-          firstName: request.firstName,
-          lastName: request.lastName,
           email: request.email,
-          phone: request.phone,
+          is_permanent: true,
           bvn: request.bvn || '',
-          accountType: 'virtual',
-          currency: 'NGN',
-          metadata: {
-            userId: request.userId,
-            source: 'quilox-prive',
-            createdVia: 'mobile-app',
-          },
+          tx_ref: `quilox-${request.userId}-${Date.now()}`,
+          firstname: request.firstName,
+          lastname: request.lastName,
+          phonenumber: request.phone || '',
+          narration: `Quilox Privé - ${request.firstName} ${request.lastName}`,
         }),
       });
 
-      if (response.success) {
-        logger.info('Virtual account created successfully:', response.data?.accountNumber);
+      // Flutterwave uses 'status' not 'success'
+      const isSuccess = response.status === 'success';
+      
+      if (isSuccess && response.data) {
+        console.info('Virtual account created successfully:', response.data.account_number);
+        
+        return {
+          success: true,
+          data: {
+            accountNumber: response.data.account_number,
+            accountName: `${request.firstName} ${request.lastName}`,
+            bankName: response.data.bank_name,
+            bankCode: response.data.bank_code || '000',
+            reference: response.data.flw_ref || response.data.order_ref,
+          },
+        };
       }
 
-      return response;
+      // If response doesn't have expected format, return error
+      throw new Error(response.message || 'Invalid response from Flutterwave');
     } catch (error: any) {
-      logger.error('Failed to create virtual account:', error);
+      console.error('Failed to create virtual account:', error);
       return {
         success: false,
         error: error.message || 'Failed to create virtual account',
+      };
+    }
+  }
+
+  /**
+   * Initialize payment and get payment link
+   */
+  async initiatePayment(payload: {
+    tx_ref: string;
+    amount: number;
+    currency: string;
+    redirect_url: string;
+    customer: {
+      email: string;
+      name: string;
+      phonenumber?: string;
+    };
+    customizations?: {
+      title?: string;
+      description?: string;
+      logo?: string;
+    };
+    payment_options?: string;
+  }): Promise<{
+    success: boolean;
+    paymentLink?: string;
+    error?: string;
+  }> {
+    try {
+      console.info('Initiating Flutterwave payment:', payload.tx_ref);
+
+      const response = await this.request<any>('/payments', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const isSuccess = response.status === 'success';
+      
+      if (isSuccess && response.data?.link) {
+        console.info('Payment link generated:', response.data.link);
+        return {
+          success: true,
+          paymentLink: response.data.link,
+        };
+      }
+
+      throw new Error(response.message || 'Failed to generate payment link');
+    } catch (error: any) {
+      console.error('Failed to initiate payment:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to initiate payment',
       };
     }
   }
@@ -235,7 +302,7 @@ class GlobusBankClient {
    */
   async getBalance(accountNumber: string): Promise<BalanceResponse> {
     try {
-      logger.debug('Fetching balance for account:', accountNumber);
+      console.debug('Fetching balance for account:', accountNumber);
 
       const response = await this.request<BalanceResponse>(
         `/accounts/${accountNumber}/balance`,
@@ -244,7 +311,7 @@ class GlobusBankClient {
 
       return response;
     } catch (error: any) {
-      logger.error('Failed to fetch balance:', error);
+      console.error('Failed to fetch balance:', error);
       return {
         success: false,
         error: error.message || 'Failed to fetch balance',
@@ -261,7 +328,7 @@ class GlobusBankClient {
     limit: number = 50
   ): Promise<TransactionHistoryResponse> {
     try {
-      logger.debug('Fetching transaction history:', { accountNumber, page, limit });
+      console.debug('Fetching transaction history:', { accountNumber, page, limit });
 
       const response = await this.request<TransactionHistoryResponse>(
         `/accounts/${accountNumber}/transactions?page=${page}&limit=${limit}`,
@@ -270,7 +337,7 @@ class GlobusBankClient {
 
       return response;
     } catch (error: any) {
-      logger.error('Failed to fetch transaction history:', error);
+      console.error('Failed to fetch transaction history:', error);
       return {
         success: false,
         error: error.message || 'Failed to fetch transactions',
@@ -283,7 +350,7 @@ class GlobusBankClient {
    */
   async transferFunds(request: TransferRequest): Promise<TransferResponse> {
     try {
-      logger.info('Initiating transfer:', {
+      console.info('Initiating transfer:', {
         amount: request.amount,
         from: request.sourceAccount,
         to: request.destinationAccount,
@@ -303,12 +370,12 @@ class GlobusBankClient {
       });
 
       if (response.success) {
-        logger.info('Transfer initiated successfully:', response.data?.reference);
+        console.info('Transfer initiated successfully:', response.data?.reference);
       }
 
       return response;
     } catch (error: any) {
-      logger.error('Failed to initiate transfer:', error);
+      console.error('Failed to initiate transfer:', error);
       return {
         success: false,
         error: error.message || 'Failed to initiate transfer',
@@ -324,7 +391,7 @@ class GlobusBankClient {
     bankCode: string
   ): Promise<{ success: boolean; accountName?: string; error?: string }> {
     try {
-      logger.debug('Verifying account:', { accountNumber, bankCode });
+      console.debug('Verifying account:', { accountNumber, bankCode });
 
       const response = await this.request<any>('/accounts/verify', {
         method: 'POST',
@@ -339,7 +406,7 @@ class GlobusBankClient {
         accountName: response.data?.accountName,
       };
     } catch (error: any) {
-      logger.error('Failed to verify account:', error);
+      console.error('Failed to verify account:', error);
       return {
         success: false,
         error: error.message || 'Failed to verify account',
@@ -352,14 +419,15 @@ class GlobusBankClient {
    */
   async getBankList(): Promise<{ success: boolean; banks?: Array<{ name: string; code: string }>; error?: string }> {
     try {
-      const response = await this.request<any>('/banks', { method: 'GET' });
+      // Flutterwave requires country code in URL - using NG for Nigeria
+      const response = await this.request<any>('/banks/NG', { method: 'GET' });
 
       return {
-        success: response.success,
-        banks: response.data?.banks || [],
+        success: response.status === 'success',
+        banks: response.data || [],
       };
     } catch (error: any) {
-      logger.error('Failed to fetch bank list:', error);
+      console.error('Failed to fetch bank list:', error);
       return {
         success: false,
         error: error.message || 'Failed to fetch banks',
@@ -369,10 +437,10 @@ class GlobusBankClient {
 }
 
 // Export singleton instance
-export const globusBankClient = new GlobusBankClient();
+export const flutterwaveClient = new FlutterwaveClient();
 
 // Export utility functions
-export const GlobusBankUtils = {
+export const FlutterwaveUtils = {
   /**
    * Format amount in Naira
    */

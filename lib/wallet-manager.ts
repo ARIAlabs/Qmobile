@@ -3,8 +3,8 @@
  * Manages virtual account creation, prive qualification, and wallet operations
  */
 
-import { logger } from '@/utils/logger';
-import { globusBankClient, type CreateAccountRequest } from './globus-bank';
+import { config } from '@/config/environment';
+import { paystackClient } from './paystack';
 import { supabase } from './supabase';
 
 // ==================== DATABASE TYPES ====================
@@ -17,6 +17,7 @@ export interface UserWallet {
   bank_name: string;
   bank_code: string;
   balance: number;
+  loyalty_points: number;
   currency: string;
   status: 'active' | 'inactive' | 'suspended';
   is_prive_qualified: boolean;
@@ -35,48 +36,39 @@ export interface PriveQualification {
 // ==================== WALLET MANAGER CLASS ====================
 
 class WalletManager {
-  private readonly REQUIRED_BOOKINGS = 5;
+  private walletCreationLocks: Map<string, Promise<UserWallet | null>> = new Map();
 
   /**
-   * Check if user qualifies for prive membership (5+ bookings)
+   * Check if user has Privé membership (wallet exists)
+   * No longer requires booking count - users can upgrade anytime
    */
   async checkPriveQualification(userId: string): Promise<PriveQualification> {
     try {
-      logger.debug('Checking prive qualification for user:', userId);
+      console.debug('Checking prive status for user:', userId);
 
-      // Count user's confirmed bookings
-      const { count, error } = await supabase
-        .from('bookings')
-        .select('*', { count: 'exact', head: true })
+      // Check if user already has a wallet (is a Privé member)
+      const { data: wallet } = await supabase
+        .from('user_wallets')
+        .select('id')
         .eq('user_id', userId)
-        .in('status', ['confirmed', 'completed']);
+        .single();
 
-      if (error) {
-        logger.error('Error counting bookings:', error);
-        return {
-          qualifies: false,
-          bookingCount: 0,
-          requiredBookings: this.REQUIRED_BOOKINGS,
-        };
-      }
+      const isPriveMember = !!wallet;
 
-      const bookingCount = count || 0;
-      const qualifies = bookingCount >= this.REQUIRED_BOOKINGS;
-
-      logger.info('Prive qualification check:', { userId, bookingCount, qualifies });
+      console.info('Prive status check:', { userId, isPriveMember });
 
       return {
-        qualifies,
-        bookingCount,
-        requiredBookings: this.REQUIRED_BOOKINGS,
-        nextMilestone: qualifies ? undefined : this.REQUIRED_BOOKINGS - bookingCount,
+        qualifies: isPriveMember,
+        bookingCount: 0, // No longer used
+        requiredBookings: 0, // No longer required
+        nextMilestone: undefined,
       };
     } catch (error: any) {
-      logger.error('Failed to check prive qualification:', error);
+      console.error('Failed to check prive status:', error);
       return {
         qualifies: false,
         bookingCount: 0,
-        requiredBookings: this.REQUIRED_BOOKINGS,
+        requiredBookings: 0,
       };
     }
   }
@@ -85,18 +77,42 @@ class WalletManager {
    * Get or create wallet for user
    */
   async getOrCreateWallet(userId: string): Promise<UserWallet | null> {
+    // Check if there's already a wallet creation in progress for this user
+    const existingLock = this.walletCreationLocks.get(userId);
+    if (existingLock) {
+      console.debug('Wallet creation already in progress, waiting...');
+      return existingLock;
+    }
+
+    // Create a new promise for this wallet creation
+    const creationPromise = this.createWalletInternal(userId);
+    this.walletCreationLocks.set(userId, creationPromise);
+
+    try {
+      const wallet = await creationPromise;
+      return wallet;
+    } finally {
+      // Clean up the lock after creation completes or fails
+      this.walletCreationLocks.delete(userId);
+    }
+  }
+
+  /**
+   * Internal wallet creation logic
+   */
+  private async createWalletInternal(userId: string): Promise<UserWallet | null> {
     try {
       // Check if wallet already exists
       const existingWallet = await this.getWallet(userId);
       if (existingWallet) {
-        logger.debug('Existing wallet found for user:', userId);
+        console.debug('Existing wallet found for user:', userId);
         return existingWallet;
       }
 
       // Check prive qualification
       const qualification = await this.checkPriveQualification(userId);
       if (!qualification.qualifies) {
-        logger.info('User not qualified for prive wallet:', {
+        console.info('User not qualified for prive wallet:', {
           userId,
           bookingCount: qualification.bookingCount,
           required: qualification.requiredBookings,
@@ -117,50 +133,86 @@ class WalletManager {
         .eq('id', userId)
         .single();
 
-      // Create virtual account via Globus Bank
-      const accountRequest: CreateAccountRequest = {
+      // Check if user has completed Privé onboarding
+      if (!profile?.prive_onboarded) {
+        console.info('User has not completed Privé onboarding yet:', userId);
+        return null;
+      }
+
+      // Validate required fields from onboarding
+      if (!profile.bvn || !profile.phone || !profile.first_name || !profile.last_name) {
+        console.warn('User profile missing required fields for wallet creation');
+        return null;
+      }
+
+      const accountRequest = {
         userId,
-        firstName: profile?.first_name || user.email?.split('@')[0] || 'Quilox',
-        lastName: profile?.last_name || 'Member',
+        firstName: profile.first_name,
+        lastName: profile.last_name,
         email: user.email || '',
-        phone: profile?.phone || '',
+        phone: profile.phone,
       };
 
-      logger.info('Creating virtual account:', accountRequest);
+      console.info('Creating virtual account:', accountRequest);
 
-      const accountResponse = await globusBankClient.createVirtualAccount(accountRequest);
+      const accountResponse = await paystackClient.createDedicatedAccount(accountRequest);
 
+      // Handle Paystack account creation result
+      let accountData;
       if (!accountResponse.success || !accountResponse.data) {
-        throw new Error(accountResponse.error || 'Failed to create virtual account');
+        // Only allow mock accounts in development
+        if (config.isProduction) {
+          console.error('Paystack account creation failed in production:', accountResponse.error);
+          throw new Error('Failed to create virtual account. Please try again later.');
+        }
+        
+        console.warn('Paystack account creation failed, using mock account for testing:', accountResponse.error);
+        accountData = {
+          accountNumber: `MOCK${Date.now()}`,
+          accountName: `${accountRequest.firstName} ${accountRequest.lastName}`,
+          bankName: 'Mock Bank (Dev Mode)',
+          bankCode: 'MOCK001',
+          reference: `mock-${userId}`,
+        };
+      } else {
+        accountData = accountResponse.data;
       }
 
       // Save wallet to database
       const { data: wallet, error } = await supabase
         .from('user_wallets')
-        .insert([{
+        .insert({
           user_id: userId,
-          account_number: accountResponse.data.accountNumber,
-          account_name: accountResponse.data.accountName,
-          bank_name: accountResponse.data.bankName,
-          bank_code: accountResponse.data.bankCode,
+          account_number: accountData.accountNumber,
+          account_name: accountData.accountName,
+          bank_name: accountData.bankName,
+          bank_code: accountData.bankCode,
           balance: 0,
           currency: 'NGN',
           status: 'active',
           is_prive_qualified: true,
           prive_qualified_at: new Date().toISOString(),
-        }])
+        })
         .select()
         .single();
 
       if (error) {
-        logger.error('Failed to save wallet to database:', error);
+        // If duplicate key error, it means wallet was created by another concurrent call
+        if (error.code === '23505') {
+          console.warn('Wallet already exists (race condition), fetching existing wallet');
+          const existingWallet = await this.getWallet(userId);
+          if (existingWallet) {
+            return existingWallet;
+          }
+        }
+        console.error('Failed to save wallet to database:', error);
         throw error;
       }
 
-      logger.info('Wallet created successfully:', wallet);
+      console.info('Wallet created successfully:', wallet);
       return wallet;
     } catch (error: any) {
-      logger.error('Failed to get or create wallet:', error);
+      console.error('Failed to get or create wallet:', error);
       return null;
     }
   }
@@ -177,45 +229,39 @@ class WalletManager {
         .single();
 
       if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-        logger.error('Error fetching wallet:', error);
+        console.error('Error fetching wallet:', error);
         return null;
       }
 
       return data;
     } catch (error: any) {
-      logger.error('Failed to fetch wallet:', error);
+      console.error('Failed to fetch wallet:', error);
       return null;
     }
   }
 
-  /**
-   * Get real-time balance from Globus Bank
-   */
   async getWalletBalance(accountNumber: string): Promise<number> {
     try {
-      const balanceResponse = await globusBankClient.getBalance(accountNumber);
+      const { data, error } = await supabase
+        .from('user_wallets')
+        .select('balance')
+        .eq('account_number', accountNumber)
+        .single();
 
-      if (!balanceResponse.success || !balanceResponse.data) {
-        throw new Error(balanceResponse.error || 'Failed to fetch balance');
+      if (error) {
+        console.error('Failed to fetch wallet balance from database:', error);
+        return 0;
       }
 
-      const balance = balanceResponse.data.availableBalance;
-
-      // Update balance in database
-      await supabase
-        .from('user_wallets')
-        .update({ balance, updated_at: new Date().toISOString() })
-        .eq('account_number', accountNumber);
-
-      return balance;
+      return data?.balance || 0;
     } catch (error: any) {
-      logger.error('Failed to get wallet balance:', error);
+      console.error('Failed to get wallet balance:', error);
       return 0;
     }
   }
 
   /**
-   * Refresh wallet data from Globus Bank
+   * Refresh wallet data
    */
   async refreshWallet(userId: string): Promise<UserWallet | null> {
     const wallet = await this.getWallet(userId);

@@ -1,7 +1,23 @@
 {
   "expo": {
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "display": "standalone",
+      "startUrl": "/?utm_source=web_app_manifest",
+      "scope": "/",
+      "orientation": "portrait",
+      "themeColor": "#000000",
+      "backgroundColor": "#000000",
+      "splash": {
+        "image": "./assets/splash.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#000000"
+      },
+      "pwa": true
+    },
     "name": "Quilox",
-    "slug": "quilox",
+    "slug": "quiloxluxury",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,9 +30,23 @@
       "backgroundColor": "#000000"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.quilox.luxury",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Quilox needs access to your photo library to update your profile picture and share content.",
+        "NSCameraUsageDescription": "Quilox needs access to your camera to take profile pictures.",
+        "NSLocationWhenInUseUsageDescription": "Quilox uses your location to show nearby venues and enhance your booking experience.",
+        "NSUserTrackingUsageDescription": "This allows us to provide personalized content and analyze app performance to improve your experience.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.quilox.luxury",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -24,7 +54,19 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "output": "static",
@@ -56,6 +98,12 @@
         "projectId": "d5e59b5f-c6fc-40aa-b3c9-80dd9e5e385e"
       }
     },
-    "owner": "clubquiloxapp"
+    "owner": "clubquiloxapp",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/d5e59b5f-c6fc-40aa-b3c9-80dd9e5e385e"
+    }
   }
 }

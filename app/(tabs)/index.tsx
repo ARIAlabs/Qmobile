@@ -2,19 +2,29 @@ import Carousel from '@/app/components/Carousel';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { QuiloxColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useWallet } from '@/hooks/useWallet';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = true; // Force dark mode
   
-  // Mock user data
-  const bookingCount = 8;
-  const maxBookings = 5;
-  const isPriveMember = bookingCount >= maxBookings;
+  // Use real wallet data
+  const { qualification, loadWallet, isPriveMember } = useWallet();
+  const bookingCount = qualification?.bookingCount || 0;
+  const maxBookings = qualification?.requiredBookings || 5;
   const progress = Math.min(bookingCount / maxBookings, 1);
+
+  // Refresh data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log('🏠 [Home Screen] useFocusEffect triggered, calling loadWallet');
+      loadWallet();
+    }, [loadWallet])
+  );
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: QuiloxColors.black }]}>
@@ -63,37 +73,42 @@ export default function HomeScreen() {
           onPress={() => router.push('/(tabs)/shop')}
         >
           <View style={[styles.iconContainer, { backgroundColor: QuiloxColors.gold }]}>
-            <IconSymbol name="list.bullet" size={24} color={QuiloxColors.black} />
+            <IconSymbol name="bag" size={24} color={QuiloxColors.black} />
           </View>
-          <Text style={[styles.actionText, { color: '#fff' }]}>Menu</Text>
+          <Text style={[styles.actionText, { color: '#fff' }]}>Shop</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Unlock Quilox Privé */}
-      <View style={[styles.priveCard, { backgroundColor: QuiloxColors.darkGray }]}>
+      {/* Quilox Privé */}
+      <TouchableOpacity 
+        style={[styles.priveCard, { backgroundColor: QuiloxColors.darkGray }]}
+        onPress={() => router.push(isPriveMember ? '/(tabs)/prive' : '/prive-onboarding')}
+        activeOpacity={0.8}
+      >
         <View style={styles.priveHeader}>
-          <Text style={[styles.priveTitle, { color: '#fff' }]}>Unlock Quilox Privé</Text>
-          <Text style={[styles.priveCount, { color: QuiloxColors.gold }]}>{bookingCount}/{maxBookings}</Text>
-        </View>
-        
-        {/* Progress Bar */}
-        <View style={[styles.progressBar, { backgroundColor: QuiloxColors.mediumGray }]}>
-          <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: QuiloxColors.gold }]} />
+          <Text style={[styles.priveTitle, { color: '#fff' }]}>Quilox Privé</Text>
+          <IconSymbol name="crown.fill" size={20} color={QuiloxColors.gold} />
         </View>
 
         {isPriveMember ? (
           <View style={styles.unlockedContainer}>
             <IconSymbol name="checkmark.circle.fill" size={20} color={QuiloxColors.success} />
             <Text style={[styles.unlockedText, { color: QuiloxColors.success }]}>
-              🎉 Privé access unlocked! Welcome to exclusive luxury.
+              Welcome to Privé! Tap to view your wallet.
             </Text>
           </View>
         ) : (
-          <Text style={[styles.priveDescription, { color: '#999' }]}>
-            {maxBookings - bookingCount} more booking{maxBookings - bookingCount !== 1 ? 's' : ''} to unlock exclusive Privé access
-          </Text>
+          <View style={{ gap: 12 }}>
+            <Text style={[styles.priveDescription, { color: '#999' }]}>
+              Upgrade to access exclusive benefits, priority bookings, and your Privé wallet.
+            </Text>
+            <View style={[styles.upgradeButton, { backgroundColor: QuiloxColors.gold }]}>
+              <Text style={{ color: QuiloxColors.black, fontWeight: '600' }}>Upgrade to Privé</Text>
+              <IconSymbol name="arrow.right" size={16} color={QuiloxColors.black} />
+            </View>
+          </View>
         )}
-      </View>
+      </TouchableOpacity>
 
       {/* My Bookings */}
       <View style={styles.bookingsSection}>
@@ -240,6 +255,15 @@ const styles = StyleSheet.create({
   unlockedText: {
     fontSize: 14,
     flex: 1,
+  },
+  upgradeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
   },
   bookingsSection: {
     paddingHorizontal: 20,

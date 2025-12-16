@@ -2,42 +2,49 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { QuiloxColors } from '@/constants/theme';
 import { useApp } from '@/context/AppContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import React, { useState } from 'react';
+import { createComment, fetchPostComments, PostComment } from '@/lib/supabase';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-
-interface Comment {
-  id: string;
-  username: string;
-  avatar: string;
-  text: string;
-  time: string;
-}
 
 export default function FeedScreen() {
   const colorScheme = useColorScheme();
   const { feedPosts, loading } = useApp();
   const isDark = true;
   
-  // State for comments per post
-  const [postComments, setPostComments] = useState<{ [key: string]: Comment[] }>({
-    // Initialize with existing comments for first post
-    [feedPosts[0]?.id || 'default']: [
-      {
-        id: '1',
-        username: 'djspinall',
-        avatar: 'https://i.pravatar.cc/40?img=1',
-        text: 'What an amazing set tonight! The energy was incredible 🔥',
-        time: '1h',
-      },
-      {
-        id: '2',
-        username: 'lagospartyqueen',
-        avatar: 'https://i.pravatar.cc/40?img=2',
-        text: 'Best night ever! See you next Friday 💃',
-        time: '45m',
-      },
-    ],
-  });
+  const [postComments, setPostComments] = useState<{ [key: string]: PostComment[] }>({});
+
+  useEffect(() => {
+    const loadComments = async () => {
+      if (feedPosts.length === 0) return;
+      
+      const commentsMap: { [key: string]: PostComment[] } = {};
+      
+      for (const post of feedPosts) {
+        const comments = await fetchPostComments(post.id);
+        commentsMap[post.id] = comments;
+      }
+      
+      setPostComments(commentsMap);
+    };
+    
+    loadComments();
+  }, [feedPosts]);
+
+  const handlePostComment = async (postId: string) => {
+    const commentText = commentInputs[postId]?.trim();
+    if (!commentText) return;
+
+    const result = await createComment(postId, commentText, 'You');
+    
+    if (result.success && result.comment) {
+      setPostComments({
+        ...postComments,
+        [postId]: [...(postComments[postId] || []), result.comment],
+      });
+      setCommentInputs({ ...commentInputs, [postId]: '' });
+      setActiveCommentPostId(null);
+    }
+  };
   
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
   const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
@@ -122,9 +129,6 @@ export default function FeedScreen() {
                 <TouchableOpacity style={styles.actionButton}>
                   <IconSymbol name="bubble.left" size={24} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton}>
-                  <IconSymbol name="paperplane" size={24} color="#fff" />
-                </TouchableOpacity>
               </View>
 
               {/* Likes */}
@@ -146,13 +150,13 @@ export default function FeedScreen() {
                   ).map((comment) => (
                     <View key={comment.id} style={styles.comment}>
                       <Image 
-                        source={{ uri: comment.avatar }} 
+                        source={{ uri: comment.avatar_url || 'https://i.pravatar.cc/40' }} 
                         style={styles.commentAvatar}
                       />
                       <View style={styles.commentContent}>
                         <Text style={styles.commentText}>
                           <Text style={styles.commentUsername}>{comment.username}</Text>
-                          <Text style={styles.commentTime}> {comment.time}</Text>
+                          <Text style={styles.commentTime}> {new Date(comment.created_at).toLocaleDateString()}</Text>
                         </Text>
                         <Text style={styles.commentBody}>{comment.text}</Text>
                       </View>
@@ -203,24 +207,7 @@ export default function FeedScreen() {
                     />
                     <TouchableOpacity
                       style={styles.postCommentButton}
-                      onPress={() => {
-                        const commentText = commentInputs[post.id]?.trim();
-                        if (commentText) {
-                          const newComment: Comment = {
-                            id: Date.now().toString(),
-                            username: 'You',
-                            avatar: 'https://i.pravatar.cc/40?img=3',
-                            text: commentText,
-                            time: 'Just now',
-                          };
-                          setPostComments({
-                            ...postComments,
-                            [post.id]: [...(postComments[post.id] || []), newComment],
-                          });
-                          setCommentInputs({ ...commentInputs, [post.id]: '' });
-                          setActiveCommentPostId(null);
-                        }
-                      }}
+                      onPress={() => handlePostComment(post.id)}
                     >
                       <Text style={[styles.postCommentButtonText, { color: QuiloxColors.gold }]}>Post</Text>
                     </TouchableOpacity>

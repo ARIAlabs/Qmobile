@@ -1,10 +1,27 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
+const { createClient } = require('@supabase/supabase-js');
 const app = express();
+
+// Initialize Supabase client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY; // Use service key for server-side operations
+const supabase = supabaseUrl && supabaseServiceKey 
+  ? createClient(supabaseUrl, supabaseServiceKey)
+  : null;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+
+// Capture raw body for Paystack webhook signature verification
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -129,6 +146,69 @@ app.get('/api/banks', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching banks:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// Paystack Webhook Handler
+app.post('/api/webhooks/paystack', async (req, res) => {
+  try {
+    console.log('🔔 Paystack webhook received:', JSON.stringify(req.body, null, 2));
+
+    const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
+    const signature = req.headers['x-paystack-signature'];
+
+    if (!paystackSecret) {
+      console.error('❌ PAYSTACK_SECRET_KEY not configured');
+      return res.status(500).json({ error: 'Paystack not configured' });
+    }
+
+    if (!signature || !req.rawBody) {
+      console.error('⚠️ Missing webhook signature or raw body');
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    const expected = crypto
+      .createHmac('sha512', paystackSecret)
+      .update(req.rawBody)
+      .digest('hex');
+
+    if (signature !== expected) {
+      console.error('⚠️ Invalid webhook signature');
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    // Check if Supabase is initialized
+    if (!supabase) {
+      console.error('❌ Supabase not initialized');
+      return res.status(500).json({ error: 'Database not configured' });
+    }
+
+    const payload = req.body;
+
+    // Only process successful charge.success events
+    if (payload.event === 'charge.success' && payload.data?.status === 'success') {
+      const txRef = payload.data.reference;
+      const amount = typeof payload.data.amount === 'number' ? payload.data.amount / 100 : 0;
+
+      console.log(`✅ Webhook received: ${txRef}, Amount: ₦${amount}`);
+      
+      // DISABLED: Client handles all balance updates to prevent double-counting
+      // Webhook just acknowledges - no database changes
+      res.json({ 
+        success: true, 
+        message: 'Webhook acknowledged',
+        transaction_ref: txRef
+      });
+    } else {
+      console.log(`ℹ️ Webhook event ignored: ${payload.event} - ${payload.data?.status}`);
+      res.json({ success: true, message: 'Event acknowledged' });
+    }
+  } catch (error) {
+    console.error('❌ Webhook processing error:', error);
     res.status(500).json({ 
       success: false,
       error: error.message 

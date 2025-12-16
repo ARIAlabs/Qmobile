@@ -1,21 +1,77 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { QuiloxColors } from '@/constants/theme';
+import PaystackModal from '@/components/PaystackModal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { router } from 'expo-router';
+import { QuiloxColors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useWallet } from '@/hooks/useWallet';
+import { paystackClient } from '@/lib/paystack';
+import { supabase, verifyAndUpdateWalletTopUp } from '@/lib/supabase';
+import { logger } from '@/utils/logger';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
+// GLOBAL guard - persists across component remounts
+const GLOBAL_PROCESSED_REFS = new Set<string>();
+let PROCESSING_LOCK = false;
 
 export default function WalletScreen() {
   const colorScheme = useColorScheme();
   const isDark = true;
 
+  // Use real wallet data instead of hard-coded value
+  const { wallet, loading, loadWallet } = useWallet();
+  const walletBalance = wallet?.balance || 0;
+
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
   const [customAmount, setCustomAmount] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentUrl, setPaymentUrl] = useState('');
+  const [pendingPaymentRef, setPendingPaymentRef] = useState<string | null>(null);
 
-  const walletBalance = 75000;
+  // Guard to prevent processing the same payment reference multiple times
+  const processedRefsRef = useRef<Set<string>>(new Set());
 
-  const quickAmounts = [5000, 10000, 25000, 50000, 100000, 200000];
+  // Listen for deep link redirects from Paystack
+  useEffect(() => {
+    const handleUrl = ({ url }: { url: string }) => {
+      logger.info('Deep link received:', url);
+      
+      // Check if it's a wallet redirect from payment
+      if (url.includes('wallet')) {
+        logger.info('Payment redirect detected, refreshing wallet...');
+        // Small delay to ensure webhook has processed
+        setTimeout(() => {
+          loadWallet();
+        }, 2000);
+      }
+    };
+
+    // Listen for URL events
+    const subscription = Linking.addEventListener('url', handleUrl);
+
+    // Check if app was opened with a URL
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleUrl({ url });
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [loadWallet]);
+
+  // Refresh wallet when screen comes into focus (after returning from payment)
+  useFocusEffect(
+    useCallback(() => {
+      if (wallet) {
+        logger.info('Wallet screen focused, refreshing balance...');
+        loadWallet();
+      }
+    }, [wallet, loadWallet])
+  );
 
   const paymentMethods = [
     {
@@ -41,22 +97,187 @@ export default function WalletScreen() {
     },
   ];
 
-  const handleTopUp = () => {
-    // Handle top-up logic
-    console.log('Top up:', selectedAmount || customAmount);
+  const handleTopUp = async () => {
+    if (!wallet) {
+      Alert.alert('Error', 'Wallet not found. Please complete Privé onboarding first.');
+      return;
+    }
+
+    const amount = parseFloat(customAmount);
+    
+    if (!amount || isNaN(amount) || amount < 1000) {
+      Alert.alert('Invalid Amount', 'Please enter an amount of at least ₦1,000');
+      return;
+    }
+    
+    logger.info('TOP-UP AMOUNT:', amount);
+
+    if (!selectedPaymentMethod) {
+      Alert.alert('Select Payment Method', 'Please choose how you want to pay');
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      // Get user profile for name and email
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('first_name, last_name')
+        .eq('id', user.id)
+        .single();
+
+      const customerName = profile ? `${profile.first_name} ${profile.last_name}` : 'Quilox User';
+      const customerEmail = user.email || '';
+
+      // Generate unique transaction reference
+      const txRef = `QLXTOP-${Date.now()}-${user.id.substring(0, 8)}`;
+
+      // Create transaction record
+      const { error: txError } = await supabase
+        .from('wallet_transactions')
+        .insert({
+          user_id: user.id,
+          wallet_id: wallet.id,
+          type: 'credit',
+          amount: amount,
+          status: 'pending',
+          reference: txRef,
+          description: `Wallet top-up via ${selectedPaymentMethod}`,
+          payment_method: selectedPaymentMethod,
+        });
+
+      if (txError) throw txError;
+
+      const channels = selectedPaymentMethod === 'card'
+        ? ['card']
+        : selectedPaymentMethod === 'bank'
+          ? ['bank_transfer']
+          : ['ussd'];
+
+      const paymentResponse = await paystackClient.initializeTransaction({
+        reference: txRef,
+        amount: amount,
+        currency: 'NGN',
+        email: customerEmail,
+        callback_url: 'quiloxluxury://wallet',
+        channels: channels as any,
+        metadata: {
+          purpose: 'wallet_topup',
+          wallet_id: wallet.id,
+          payment_method: selectedPaymentMethod,
+          customer_name: customerName,
+        },
+      });
+
+      if (!paymentResponse.success || !paymentResponse.paymentLink) {
+        throw new Error(paymentResponse.error || 'Failed to generate payment link');
+      }
+
+      logger.info('Opening payment modal:', paymentResponse.paymentLink);
+
+      // Open payment modal (keeps user in app)
+      setPendingPaymentRef(txRef);
+      setPaymentUrl(paymentResponse.paymentLink);
+      setShowPaymentModal(true);
+
+    } catch (error: any) {
+      logger.error('Top-up failed:', error);
+      Alert.alert(
+        'Payment Failed',
+        error.message || 'Unable to process payment. Please try again.'
+      );
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handlePaymentSuccess = async (reference: string) => {
+    logger.info('=== PAYMENT SUCCESS CALLED ===', reference);
+    
+    // GLOBAL guard - check if already processed or currently processing
+    if (GLOBAL_PROCESSED_REFS.has(reference)) {
+      logger.info('=== GLOBAL: Already processed, skipping ===', reference);
+      setShowPaymentModal(false);
+      setPaymentUrl('');
+      return;
+    }
+    
+    // Check if another process is running
+    if (PROCESSING_LOCK) {
+      logger.info('=== GLOBAL: Processing lock active, skipping ===', reference);
+      setShowPaymentModal(false);
+      setPaymentUrl('');
+      return;
+    }
+    
+    // Acquire lock and mark as processed IMMEDIATELY (synchronous)
+    PROCESSING_LOCK = true;
+    GLOBAL_PROCESSED_REFS.add(reference);
+    processedRefsRef.current.add(reference);
+    
+    logger.info('=== GLOBAL: Lock acquired, processing ===', reference);
+    
+    setShowPaymentModal(false);
+    setPaymentUrl('');
+    setIsProcessing(true);
+
+    try {
+      if (!wallet) {
+        throw new Error('Wallet not found');
+      }
+
+      // Verify payment and update wallet balance
+      const result = await verifyAndUpdateWalletTopUp(reference, wallet.id);
+      
+      if (result.success) {
+        Alert.alert(
+          'Top-up Successful!',
+          `₦${(result.newBalance || 0).toLocaleString()} is now your wallet balance.`
+        );
+        await loadWallet();
+      } else {
+        throw new Error(result.error || 'Failed to verify payment');
+      }
+    } catch (error: any) {
+      logger.error('Error processing top-up:', error);
+      Alert.alert('Error', error.message || 'Failed to process top-up. Please contact support.');
+      await loadWallet();
+    } finally {
+      PROCESSING_LOCK = false; // Release lock
+      setPendingPaymentRef(null);
+      setIsProcessing(false);
+      setSelectedAmount(null);
+      setCustomAmount('');
+      setSelectedPaymentMethod(null);
+    }
+  };
+
+  const handlePaymentCancel = () => {
+    logger.info('Payment cancelled');
+    setShowPaymentModal(false);
+    setPaymentUrl('');
+    setPendingPaymentRef(null);
+    Alert.alert('Payment Cancelled', 'You cancelled the payment. Please try again when ready.');
+  };
+
+  const handlePaymentError = (error: string) => {
+    logger.error('Payment error from modal:', error);
+    setShowPaymentModal(false);
+    setPaymentUrl('');
+    setPendingPaymentRef(null);
+    Alert.alert('Payment Error', error || 'An error occurred during payment. Please try again.');
   };
 
   return (
     <View style={[styles.container, { backgroundColor: QuiloxColors.black }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <IconSymbol name="arrow.left" size={24} color="#fff" />
-        </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: '#fff' }]}>Privé Wallet</Text>
-        <TouchableOpacity>
-          <IconSymbol name="wallet.pass" size={24} color={QuiloxColors.gold} />
-        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -89,54 +310,22 @@ export default function WalletScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Select Amount */}
+        {/* Enter Amount */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: '#fff' }]}>Select Amount</Text>
-          <View style={styles.amountGrid}>
-            {quickAmounts.map((amount) => (
-              <TouchableOpacity
-                key={amount}
-                style={[
-                  styles.amountButton,
-                  { backgroundColor: QuiloxColors.darkGray },
-                  selectedAmount === amount && {
-                    backgroundColor: QuiloxColors.gold + '30',
-                    borderColor: QuiloxColors.gold,
-                    borderWidth: 2,
-                  },
-                ]}
-                onPress={() => {
-                  setSelectedAmount(amount);
-                  setCustomAmount('');
-                }}
-              >
-                <Text
-                  style={[
-                    styles.amountText,
-                    { color: selectedAmount === amount ? QuiloxColors.gold : '#fff' },
-                  ]}
-                >
-                  ₦{amount / 1000}k
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Custom Amount */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: '#fff' }]}>Or enter custom amount</Text>
+          <Text style={[styles.sectionTitle, { color: '#fff' }]}>Enter Amount</Text>
           <TextInput
-            style={[styles.customInput, { backgroundColor: QuiloxColors.darkGray, color: '#fff' }]}
+            style={[styles.customInput, { backgroundColor: QuiloxColors.darkGray, color: '#fff', fontSize: 18, paddingVertical: 16 }]}
             placeholder="Enter amount (min ₦1,000)"
             placeholderTextColor="#666"
             value={customAmount}
-            onChangeText={(text) => {
-              setCustomAmount(text);
-              setSelectedAmount(null);
-            }}
+            onChangeText={setCustomAmount}
             keyboardType="numeric"
           />
+          {customAmount ? (
+            <Text style={{ color: QuiloxColors.gold, marginTop: 8, fontSize: 14 }}>
+              You will top up: ₦{parseFloat(customAmount || '0').toLocaleString()}
+            </Text>
+          ) : null}
         </View>
 
         {/* Payment Method */}
@@ -186,29 +375,43 @@ export default function WalletScreen() {
             styles.topUpButton,
             {
               backgroundColor:
-                (selectedAmount || customAmount) && selectedPaymentMethod
+                customAmount && selectedPaymentMethod
                   ? QuiloxColors.gold
                   : QuiloxColors.darkGray,
             },
           ]}
           onPress={handleTopUp}
-          disabled={!(selectedAmount || customAmount) || !selectedPaymentMethod}
+          disabled={!customAmount || !selectedPaymentMethod || isProcessing}
         >
-          <Text
-            style={[
-              styles.topUpText,
-              {
-                color:
-                  (selectedAmount || customAmount) && selectedPaymentMethod
-                    ? QuiloxColors.black
-                    : '#666',
-              },
-            ]}
-          >
-            Top Up Wallet
-          </Text>
+          {isProcessing ? (
+            <ActivityIndicator color={QuiloxColors.black} />
+          ) : (
+            <Text
+              style={[
+                styles.topUpText,
+                {
+                  color:
+                    customAmount && selectedPaymentMethod
+                      ? QuiloxColors.black
+                      : '#666',
+                },
+              ]}
+            >
+              Top Up Wallet
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
+
+      {/* Paystack Payment Modal */}
+      <PaystackModal
+        visible={showPaymentModal}
+        paymentUrl={paymentUrl}
+        reference={pendingPaymentRef || ''}
+        onSuccess={handlePaymentSuccess}
+        onCancel={handlePaymentCancel}
+        onError={handlePaymentError}
+      />
     </View>
   );
 }

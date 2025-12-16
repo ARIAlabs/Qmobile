@@ -19,7 +19,6 @@
 
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-import { logger } from './logger';
 
 /**
  * Data Subject Rights under NDPR
@@ -199,7 +198,7 @@ export class ComplianceManager {
     userConsents.push(consent);
     this.consentRecords.set(userId, userConsents);
 
-    logger.info('Consent requested', {
+    console.info('Consent requested', {
       userId,
       purpose,
       dataCategories,
@@ -216,7 +215,7 @@ export class ComplianceManager {
     const consent = userConsents?.find(c => c.id === consentId);
 
     if (!consent) {
-      logger.error('Consent record not found', { consentId, userId });
+      console.error('Consent record not found', { consentId, userId });
       return false;
     }
 
@@ -230,7 +229,7 @@ export class ComplianceManager {
 
     await this.persistConsentRecords(userId);
 
-    logger.info('Consent granted', { consentId, userId, purpose: consent.purpose });
+    console.info('Consent granted', { consentId, userId, purpose: consent.purpose });
 
     return true;
   }
@@ -251,7 +250,7 @@ export class ComplianceManager {
 
     await this.persistConsentRecords(userId);
 
-    logger.info('Consent withdrawn', { consentId, userId });
+    console.info('Consent withdrawn', { consentId, userId });
 
     return true;
   }
@@ -269,7 +268,7 @@ export class ComplianceManager {
 
     // Check expiration
     if (consent.expiresAt && new Date(consent.expiresAt) < new Date()) {
-      logger.warn('Consent expired', { userId, purpose });
+      console.warn('Consent expired', { userId, purpose });
       return false;
     }
 
@@ -288,7 +287,7 @@ export class ComplianceManager {
       requestedAt: new Date().toISOString(),
     };
 
-    logger.info('Data access request received', { userId });
+    console.info('Data access request received', { userId });
 
     // Collect all user data (implement based on your data schema)
     const userData = await this.collectUserData(userId);
@@ -316,7 +315,7 @@ export class ComplianceManager {
       reason,
     };
 
-    logger.info('Data erasure request received', { userId, reason });
+    console.info('Data erasure request received', { userId, reason });
 
     try {
       // Anonymize or delete user data
@@ -325,11 +324,11 @@ export class ComplianceManager {
       request.status = 'completed';
       request.completedAt = new Date().toISOString();
 
-      logger.info('Data erasure completed', { userId });
+      console.info('Data erasure completed', { userId });
     } catch (error) {
       request.status = 'rejected';
       request.reason = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('Data erasure failed', error);
+      console.error('Data erasure failed', error);
     }
 
     return request;
@@ -347,7 +346,7 @@ export class ComplianceManager {
       requestedAt: new Date().toISOString(),
     };
 
-    logger.info('Data portability request received', { userId });
+    console.info('Data portability request received', { userId });
 
     try {
       // Export user data in machine-readable format (JSON)
@@ -357,10 +356,10 @@ export class ComplianceManager {
       request.completedAt = new Date().toISOString();
       request.metadata = { exportData };
 
-      logger.info('Data portability completed', { userId });
+      console.info('Data portability completed', { userId });
     } catch (error) {
       request.status = 'rejected';
-      logger.error('Data portability failed', error);
+      console.error('Data portability failed', error);
     }
 
     return request;
@@ -385,7 +384,7 @@ export class ComplianceManager {
     // Store acceptance record
     await this.persistPrivacyAcceptance(userId, acceptance);
 
-    logger.info('Privacy policy accepted', { userId, version: this.privacyPolicyVersion });
+    console.info('Privacy policy accepted', { userId, version: this.privacyPolicyVersion });
   }
 
   /**
@@ -406,7 +405,7 @@ export class ComplianceManager {
       recordsDeleted += deleted;
 
       if (deleted > 0) {
-        logger.info('Data retention enforced', {
+        console.info('Data retention enforced', {
           userId,
           category,
           recordsDeleted: deleted,
@@ -434,13 +433,13 @@ export class ComplianceManager {
     // Check if within 72-hour notification deadline
     const hoursElapsed = this.getHoursElapsed(breachRecord.detectedAt);
     if (hoursElapsed > this.BREACH_NOTIFICATION_DEADLINE_HOURS) {
-      logger.error('Data breach notification deadline exceeded', {
+      console.error('Data breach notification deadline exceeded', {
         hoursElapsed,
         deadline: this.BREACH_NOTIFICATION_DEADLINE_HOURS,
       });
     }
 
-    logger.error('Data breach reported', {
+    console.error('Data breach reported', {
       severity: breachRecord.severity,
       affectedRecords: breachRecord.affectedRecords,
       dataCategories: breachRecord.dataCategories,
@@ -567,7 +566,7 @@ export class ComplianceManager {
   }
 
   private async eraseUserData(userId: string): Promise<void> {
-    logger.info('Erasing user data', { userId });
+    console.info('Erasing user data', { userId });
   }
 
   private async exportUserData(userId: string): Promise<string> {
@@ -584,14 +583,14 @@ export class ComplianceManager {
   }
 
   private async notifyDataProtectionAuthority(breach: DataBreachRecord): Promise<void> {
-    logger.info('Notifying NITDA of data breach', {
+    console.info('Notifying NITDA of data breach', {
       breachId: breach.id,
       severity: breach.severity,
     });
   }
 
   private async notifyAffectedUsers(breach: DataBreachRecord): Promise<void> {
-    logger.info('Notifying affected users', {
+    console.info('Notifying affected users', {
       breachId: breach.id,
       userCount: breach.affectedUsers.length,
     });

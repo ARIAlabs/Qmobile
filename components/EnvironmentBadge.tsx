@@ -2,6 +2,9 @@ import { config } from '@/config/environment';
 import { StyleSheet, Text, View } from 'react-native';
 
 export function EnvironmentBadge() {
+  // Disabled for production release
+  return null;
+
   // Safe config access with error handling
   try {
     // Only show in development and staging
