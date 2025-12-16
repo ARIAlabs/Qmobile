@@ -5,18 +5,17 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Copy backend package files
-COPY backend/package*.json ./backend/
+COPY backend/package*.json ./
 
 # Install dependencies
-WORKDIR /app/backend
 RUN npm install --production
 
 # Copy backend source code
 COPY backend/ .
 
-# Expose port (Cloud Run uses PORT env variable)
-ENV PORT=8080
-EXPOSE 8080
+# Expose port
+ENV PORT=3000
+EXPOSE 3000
 
 # Start the application
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
