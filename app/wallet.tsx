@@ -8,7 +8,7 @@ import { supabase, verifyAndUpdateWalletTopUp } from '@/lib/supabase';
 import { logger } from '@/utils/logger';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // GLOBAL guard - persists across component remounts
 const GLOBAL_PROCESSED_REFS = new Set<string>();
@@ -164,7 +164,7 @@ export default function WalletScreen() {
         amount: amount,
         currency: 'NGN',
         email: customerEmail,
-        callback_url: 'quiloxluxury://wallet',
+        callback_url: Platform.OS === 'web' ? `${window.location.origin}/payment-callback` : 'quiloxluxury://wallet',
         channels: channels as any,
         metadata: {
           purpose: 'wallet_topup',

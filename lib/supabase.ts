@@ -250,7 +250,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: secureStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: __DEV__, // Use __DEV__ to avoid circular dependency
+    detectSessionInUrl: true, // Enable for OAuth callbacks on all platforms
   },
 });
 
