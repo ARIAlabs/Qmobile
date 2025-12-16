@@ -1,20 +1,25 @@
 {
   "expo": {
     "web": {
-      "favicon": "./assets/images/pwa-icon.png",
+      "favicon": "./assets/images/icon.png",
       "bundler": "metro",
       "display": "standalone",
-      "startUrl": "/?utm_source=web_app_manifest",
+      "startUrl": "/",
       "scope": "/",
       "orientation": "portrait",
       "themeColor": "#000000",
       "backgroundColor": "#000000",
       "splash": {
-        "image": "./assets/images/pwa-icon.png",
+        "image": "./assets/images/icon.png",
         "resizeMode": "contain",
         "backgroundColor": "#000000"
       },
-      "pwa": true
+      "output": "static",
+      "meta": {
+        "apple-mobile-web-app-capable": "yes",
+        "apple-mobile-web-app-status-bar-style": "black-translucent",
+        "mobile-web-app-capable": "yes"
+      }
     },
     "name": "Quilox",
     "slug": "quiloxluxury",
@@ -67,11 +72,6 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
       ]
-    },
-    "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       "expo-router",

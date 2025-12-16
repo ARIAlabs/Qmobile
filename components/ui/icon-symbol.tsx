@@ -74,6 +74,8 @@ const MAPPING = {
 
   // Other icons
   'paperplane.fill': 'send',
+  'arrow.right.square': 'logout',
+  'arrow.right.square.fill': 'logout',
 } as IconMapping;
 
 /**
