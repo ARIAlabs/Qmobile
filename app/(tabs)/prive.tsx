@@ -3,9 +3,9 @@ import { QuiloxColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useWallet } from '@/hooks/useWallet';
 import { useFocusEffect } from '@react-navigation/native';
-import { router } from 'expo-router';
-import React, { useCallback } from 'react';
-import { ActivityIndicator, Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { router, usePathname } from 'expo-router';
+import React, { useCallback, useEffect } from 'react';
+import { ActivityIndicator, Image, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function PriveScreen() {
   const colorScheme = useColorScheme();
@@ -13,14 +13,23 @@ export default function PriveScreen() {
 
   // Use wallet hook for real data
   const { wallet, qualification, priveOnboarded, loading, refreshing, refreshBalance, loadWallet, isPriveMember } = useWallet();
+  const pathname = usePathname();
 
-  // Refresh data when screen comes into focus
+  // Refresh data when screen comes into focus (native)
   useFocusEffect(
     useCallback(() => {
       console.log('🎯 [Privé Screen] useFocusEffect triggered, calling loadWallet');
       loadWallet();
     }, [loadWallet])
   );
+
+  // Web-specific: refresh when navigating back to this screen
+  useEffect(() => {
+    if (Platform.OS === 'web' && pathname === '/prive') {
+      console.log('🌐 [Privé Screen] Web pathname changed to /prive, refreshing wallet');
+      loadWallet();
+    }
+  }, [pathname, loadWallet]);
 
   const walletBalance = wallet?.balance || 0;
   const loyaltyPoints = wallet?.loyalty_points || 0; // Points only added on top-up, not deducted on spend
