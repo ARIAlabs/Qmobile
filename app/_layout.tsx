@@ -5,10 +5,14 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { supabase } from '@/lib/supabase';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import 'react-native-reanimated';
+
+// Prevent splash screen from auto-hiding until we're ready
+SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -47,6 +51,13 @@ function RootLayoutNav() {
       router.replace('/(tabs)');
     }
   }, [isAuthenticated, segments]);
+
+  // Hide splash screen once auth check is complete
+  useEffect(() => {
+    if (isAuthenticated !== null) {
+      SplashScreen.hideAsync();
+    }
+  }, [isAuthenticated]);
 
   // Force HTTPS when running on web inside an iframe to align with Builder's https origin
  // useEffect(() => {

@@ -103,18 +103,22 @@ export default function PriveOnboardingScreen() {
         throw profileError;
       }
 
-      Alert.alert(
-        'Success! 🎉',
-        'Your Privé account is being created. This may take a moment...',
-        [
-          {
-            text: 'Continue',
-            onPress: () => {
-              router.replace('/(tabs)/prive');
+      if (Platform.OS === 'web') {
+        router.replace('/(tabs)/prive');
+      } else {
+        Alert.alert(
+          'Success! 🎉',
+          'Your Privé account is being created. This may take a moment...',
+          [
+            {
+              text: 'Continue',
+              onPress: () => {
+                router.replace('/(tabs)/prive');
+              },
             },
-          },
-        ]
-      );
+          ]
+        );
+      }
     } catch (error: any) {
       console.error('Onboarding error:', error);
       Alert.alert('Error', error.message || 'Failed to complete onboarding');
