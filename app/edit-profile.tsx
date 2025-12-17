@@ -20,6 +20,7 @@ interface Profile {
   first_name: string;
   last_name: string;
   phone: string;
+  bvn: string;
 }
 
 export default function EditProfileScreen() {
@@ -28,6 +29,7 @@ export default function EditProfileScreen() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
+  const [bvn, setBvn] = useState('');
   const [email, setEmail] = useState('');
 
   useEffect(() => {
@@ -46,7 +48,7 @@ export default function EditProfileScreen() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('first_name, last_name, phone')
+        .select('first_name, last_name, phone, bvn')
         .eq('id', user.id)
         .single();
 
@@ -54,6 +56,7 @@ export default function EditProfileScreen() {
         setFirstName(profile.first_name || '');
         setLastName(profile.last_name || '');
         setPhone(profile.phone || '');
+        setBvn(profile.bvn || '');
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -80,10 +83,15 @@ export default function EditProfileScreen() {
         .eq('id', user.id)
         .single();
 
+      // Auto-set prive_onboarded when BVN is provided
+      const hasBvn = bvn.trim().length === 11;
       const profileData = {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         phone: phone.trim(),
+        bvn: bvn.trim(),
+        prive_onboarded: hasBvn,
+        prive_onboarded_at: hasBvn ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       };
 
@@ -188,6 +196,21 @@ export default function EditProfileScreen() {
               placeholderTextColor="#666"
               keyboardType="phone-pad"
             />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>BVN (Bank Verification Number)</Text>
+            <TextInput
+              style={styles.input}
+              value={bvn}
+              onChangeText={setBvn}
+              placeholder="Enter 11-digit BVN"
+              placeholderTextColor="#666"
+              keyboardType="number-pad"
+              maxLength={11}
+              secureTextEntry
+            />
+            <Text style={styles.helperText}>Required for Privé wallet access</Text>
           </View>
 
           <View style={styles.inputGroup}>

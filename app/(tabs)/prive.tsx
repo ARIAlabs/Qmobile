@@ -49,7 +49,7 @@ export default function PriveScreen() {
     );
   }
 
-  // Show onboarding screen if qualified but not onboarded
+  // Show prompt to complete profile if qualified but BVN not set
   if (isPriveMember && !priveOnboarded) {
     return (
       <View style={[styles.container, { backgroundColor: QuiloxColors.black }]}>
@@ -72,7 +72,7 @@ export default function PriveScreen() {
             </View>
             <Text style={styles.lockedTitle}>Congratulations! 🎉</Text>
             <Text style={styles.lockedSubtitle}>
-              You've qualified for Quilox Privé! Complete your profile to unlock your wallet and exclusive benefits.
+              You've qualified for Quilox Privé! Add your BVN in your profile to unlock your wallet and exclusive benefits.
             </Text>
           </View>
 
@@ -97,13 +97,13 @@ export default function PriveScreen() {
             <IconSymbol name="sparkles" size={32} color={QuiloxColors.gold} />
             <Text style={[styles.ctaTitle, { color: QuiloxColors.gold }]}>Complete Your Profile</Text>
             <Text style={[styles.ctaDescription, { color: '#ccc' }]}>
-              We need some information to create your virtual wallet account
+              Add your BVN to create your virtual wallet account
             </Text>
             <TouchableOpacity
               style={[styles.ctaButton, { backgroundColor: QuiloxColors.gold }]}
-              onPress={() => router.push('/prive-onboarding')}
+              onPress={() => router.push('/edit-profile')}
             >
-              <Text style={[styles.ctaButtonText, { color: QuiloxColors.black }]}>Start Onboarding</Text>
+              <Text style={[styles.ctaButtonText, { color: QuiloxColors.black }]}>Edit Profile</Text>
               <IconSymbol name="arrow.right" size={20} color={QuiloxColors.black} />
             </TouchableOpacity>
           </View>

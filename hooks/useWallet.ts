@@ -38,14 +38,16 @@ export function useWallet() {
       console.info('📊 Qualification result:', qual);
       setQualification(qual);
 
-      // Check if user has completed Privé onboarding
+      // Check if user has completed Privé onboarding (has BVN set)
       const { data: profile } = await supabase
         .from('profiles')
-        .select('prive_onboarded')
+        .select('prive_onboarded, bvn')
         .eq('id', user.id)
         .single();
       
-      setPriveOnboarded(profile?.prive_onboarded || false);
+      // User is onboarded if they have a valid 11-digit BVN
+      const hasBvn = profile?.bvn && profile.bvn.length === 11;
+      setPriveOnboarded(hasBvn || profile?.prive_onboarded || false);
 
       // Get or create wallet if qualified
       if (qual.qualifies) {
