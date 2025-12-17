@@ -104,6 +104,8 @@ export default function PriveOnboardingScreen() {
       }
 
       if (Platform.OS === 'web') {
+        // Small delay to ensure database has committed the change before navigation
+        await new Promise(resolve => setTimeout(resolve, 500));
         router.replace('/(tabs)/prive');
       } else {
         Alert.alert(
