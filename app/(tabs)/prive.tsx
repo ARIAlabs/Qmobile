@@ -25,8 +25,8 @@ export default function PriveScreen() {
 
   // Web-specific: refresh when navigating back to this screen
   useEffect(() => {
-    if (Platform.OS === 'web' && pathname === '/prive') {
-      console.log('🌐 [Privé Screen] Web pathname changed to /prive, refreshing wallet');
+    if (Platform.OS === 'web' && (pathname === '/prive' || pathname === '/(tabs)/prive' || pathname?.includes('prive'))) {
+      console.log('🌐 [Privé Screen] Web pathname changed to', pathname, '- refreshing wallet');
       loadWallet();
     }
   }, [pathname, loadWallet]);

@@ -116,9 +116,14 @@ export default function EditProfileScreen() {
 
       if (error) throw error;
 
-      Alert.alert('Success', 'Profile updated successfully', [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+      // On web, Alert.alert callback doesn't fire - navigate directly
+      if (Platform.OS === 'web') {
+        router.back();
+      } else {
+        Alert.alert('Success', 'Profile updated successfully', [
+          { text: 'OK', onPress: () => router.back() }
+        ]);
+      }
     } catch (error: any) {
       console.error('Error saving profile:', error);
       Alert.alert('Error', error.message || 'Failed to save profile');
